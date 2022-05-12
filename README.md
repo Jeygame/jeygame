@@ -1,4 +1,4 @@
-# jeygame
+# ![The Jeygame logo](./logo-big.svg)  
 ***The HTML5 Game Engine that does it right***  
 
 Jeygame is a HTML5 game engine that aims to be simple to use, yet still very versatile.
