@@ -1,4 +1,5 @@
 "use strict";
+console.log("%cJeygame%c.js has loaded!", "color: #008cff;", "color: white;")
 // jeygame main && properties
 
 const Jeygame = function(find) {
@@ -357,9 +358,9 @@ Object.defineProperties(Jeygame, {
         "writable": false,
         "value": function() {
             if(Jeygame.element) {
-                return Jeygame.element.requestFullscreen();
                 Jeygame.dimensions.x = window.innerWidth;
                 Jeygame.dimensions.y = window.innerHeight;
+                return Jeygame.element.requestFullscreen();
             } else {
                 throw new Error(__jg_errors.noRendering);
             }
