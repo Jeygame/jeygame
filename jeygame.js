@@ -1,5 +1,4 @@
 "use strict";
-console.log("%cJeygame%c.js has loaded!", "color: #008cff;", "color: white;")
 // jeygame main && properties
 
 const Jeygame = function(find) {
@@ -34,6 +33,36 @@ Jeygame.element = undefined;
 Jeygame.instances = [];
 Jeygame.keysHeld = {};
 
+Jeygame.vector2 = class {
+  constructor(x,y) {
+    this.x = x;
+    this.y = y;
+  }
+
+  magnitude() {
+    return ((this.x * this.x) + (this.y * this.y)) ** 0.5
+  }
+
+  normalize(len = 1) {
+    let mag = this.magnitude()
+    if(mag > 0) {
+      this.divide(mag)
+    }
+    return this.multiply(len)
+  }
+
+  multiply(amount) {
+    this.x = this.x * amount
+    this.y = this.y * amount
+    return this
+  }
+
+  divide(amount) {
+    this.x = this.x / amount
+    this.y = this.y / amount
+    return this
+  }
+}
 const __jg_errors = {
     "noRendering": "Jeygame has no rendering element! Use Jeygame.init()",
     "notRendered": "Instance is not being rendered!"
@@ -50,8 +79,24 @@ Jeygame.components = {
                 this.element.style.setProperty("height", `${y}px`);
                 return this;
             },
-            "moveTo": function(x,y) {this.position.x = x, this.position.y = y; return this;},
-            "moveBy": function(x,y) {this.position.x += x, this.position.y += y; return this;},
+            "moveTo": function(vec2) {
+              if(arguments.length > 1) {
+                this.position.x = arguments[0], this.position.y = arguments[1]; 
+                return this;
+              }
+              this.position.x = vec2.x,
+                this.position.y = vec2.y
+              return this;
+            },
+            "moveBy": function(vec2) {
+              if(arguments.length > 1) {
+                this.position.x += arguments[0], this.position.y += arguments[1]; 
+                return this;
+              }
+              this.position.x += vec2.x,
+                this.position.y += vec2.y
+              return this;
+            },
             "element": document.createElement("div")
         },
         "init": function(instance) {
@@ -109,6 +154,32 @@ Jeygame.components = {
             }
         }
     },
+    "fourway": {
+      "properties": {
+        "speed": 100,
+        "fourway": function(speed = 100) {
+          this.speed = speed;
+          this.bind("process", (dt) => {
+            let vector = new Jeygame.vector2(0,0);
+            let st = dt / 1000
+
+            if(Jeygame.keyDown("a")) vector.x -= 1
+            if(Jeygame.keyDown("d")) vector.x += 1
+            if(Jeygame.keyDown("s")) vector.y += 1
+            if(Jeygame.keyDown("w")) vector.y -= 1
+
+            vector.normalize(speed * st);
+            this.moveBy(vector)
+          })
+          return this;
+        }
+      },
+      "init": function(instance) {
+        if(instance.components.indexOf("2d") == -1) {
+          throw new Error(__jg_errors.notRendered);
+        }
+      }
+    },
     "rotate": {
         "properties": {
             "rotation": 0,
@@ -160,7 +231,7 @@ Jeygame.components = {
         "init": function(instance) {
             if(instance.components.indexOf("2d") != -1) {
                 instance.element.style.setProperty("border-color", "black");
-                instance.element.style.setProperty("border-width", "2px");
+                instance.element.style.setProperty("border-width", "0px");
                 instance.element.style.setProperty("border-style", "solid");
             } else {
                 throw new Error(__jg_errors.notRendered);
@@ -189,7 +260,12 @@ Jeygame.fire = function(event) {
     argsWithoutEvent.splice(0, 1);
 
     for(let i = 0; i < Jeygame.instances.length; i++) {
-        if(Jeygame.instances[i].events[event]) Jeygame.instances[i].events[event](...argsWithoutEvent);
+      let events = Jeygame.instances[i].events[event];
+      if(events) {
+        for(let j = 0; j < events.length; j++) {
+          events[j](...argsWithoutEvent);
+        }
+      }
     }
 }
 
@@ -233,24 +309,40 @@ class JeygameInstance {
 
     addComponents(cmp) {
         let components = cmp.split(" ");
-        for(let i = 0; i < components.length; i++) {
-            if(this.components.indexOf(components[i]) == -1) {
-                Object.assign(this, Jeygame.components[components[i]].properties);
-                if(Jeygame.components[components[i]].init) {
-                    Jeygame.components[components[i]].init(this)
-                }
-                this.components.push(components[i])
+        components = new Set(components);
+
+        let importantComponents = ["2d"];
+
+        for(let i = 0; i < importantComponents.length; i++) {
+          if(components.has(importantComponents[i])) {
+            Object.assign(this, Jeygame.components[importantComponents[i]]?.properties);
+            if(Jeygame.components[importantComponents[i]]?.init) {
+                Jeygame.components[importantComponents[i]]?.init(this)
             }
+            this.components.push(importantComponents[i])
+          }
+        }
+
+        let iterator = components.values();
+        for(let i = 0; i < components.size; i++) {
+          let current = iterator.next().value;
+          Object.assign(this, Jeygame.components[current]?.properties);
+            if(Jeygame.components[current]?.init) {
+                Jeygame.components[current].init(this)
+            }
+            this.components.push(current)
         }
         return this;
     }
 
     bind(event, callback) {
         if(callback instanceof Function) {
-            this.events[event] = callback;
+            if(!this.events[event]) this.events[event] = []
+            this.events[event].push(callback)
         }
         if(!callback) {
-            delete this.events[event];
+            let index = this.events[event].indexOf(callback)
+            if(index != -1) delete this.events[event][index];
         }
         return this;
     }
@@ -259,7 +351,12 @@ class JeygameInstance {
         let argsWithoutEvent = [...arguments];
         argsWithoutEvent.splice(0, 1);
 
-        if(this.events[event]) this.events[event](...argsWithoutEvent);
+        if(this.events[event]) {
+          for(let i = 0; i > this.events[event].length; i++) {
+            this.events[event][i](...argsWithoutEvent);
+          }
+          
+        }
         return this;
     }
 
@@ -314,9 +411,14 @@ Object.defineProperties(Jeygame, {
                 Jeygame.keysHeld = {};
                 Jeygame.fire("unfocus");
             })
-            jgElement.addEventListener("focus", () => {
+            jgElement.addEventListener("focusin", () => {
                 Jeygame.keysHeld = {};
+                console.log("focus!")
                 Jeygame.fire("focus");
+            })
+            jgElement.addEventListener("mousedown", (e) => {
+                e.preventDefault()
+                jgElement.focus()
             })
             window.addEventListener("resize", () => {
                 Jeygame.fire("resizeWindow", window.innerWidth, window.innerHeight);
@@ -330,19 +432,7 @@ Object.defineProperties(Jeygame, {
         "writable": false,
         "value": function(cp) {
             let returnInstance = new JeygameInstance(Jeygame.currentID++);
-            let componentList = cp.split(" ");
-            componentList = componentList.filter(cp => cp);
-            
-            for(let i = 0; i < componentList.length; i++) {
-                if(Jeygame.components[componentList[i]]) {
-                    Object.assign(returnInstance, Jeygame.components[componentList[i]].properties);
-                    if(Jeygame.components[componentList[i]].init) {
-                        Jeygame.components[componentList[i]].init(returnInstance)
-                    }
-                }
-                returnInstance.components.push(componentList[i])
-            }
-            returnInstance.components = componentList;
+            returnInstance.addComponents(cp)
             return returnInstance;
         }
     },
@@ -434,3 +524,5 @@ Object.defineProperties(Jeygame.dimensions, {
         }
     }
 })
+
+console.log("%cJeygame%c.js has loaded!", "color: #009dff;", "color: white;")
